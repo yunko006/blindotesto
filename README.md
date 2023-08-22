@@ -5,7 +5,7 @@
 
 Créer une api qui permet de créer et de faire des blindtests ! 
 
-# Idées des fonctionnalitées de l'app : 
+# Idées des fonctionnalités de l'app : 
 
 - prends une playlist spotify 
 
@@ -16,7 +16,7 @@ Créer une api qui permet de créer et de faire des blindtests !
 
 - systeme de points et de leaderboard pour le blindtest en cours
 
-## Endpoints de l'api : 
+# Endpoints de l'api : 
 
 Endpoint | HTTP Method | CRUD Method | Result
 ------------ | ------------|------------ | ------------|
