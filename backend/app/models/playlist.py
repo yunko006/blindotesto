@@ -1,4 +1,5 @@
 from tortoise import fields, models
+from tortoise.contrib.pydantic import pydantic_model_creator
 
 
 class Playlist(models.Model):
@@ -15,3 +16,6 @@ class Playlist(models.Model):
 
     class Meta:
         table = "playlists"
+
+
+PlaylistSchema = pydantic_model_creator(Playlist)
