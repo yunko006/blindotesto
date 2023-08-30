@@ -34,7 +34,8 @@ def init_db(app) -> None:
 
 # faire les migrations sans passer par les cmds aerich
 async def generate_schema() -> None:
-    log.info("Initializing Tortoise...")
+    # log ne marche pas atm donc print pour ez fix
+    print("Initializing Tortoise...")
 
     await Tortoise.init(
         db_url=os.environ.get("DATABASE_URL"),
@@ -42,7 +43,7 @@ async def generate_schema() -> None:
             "models": ["models.tortoise", "models.playlist"]
         },  # bien faire attention juste "models.playlist" et non "app.models.tortoise"
     )
-    log.info("Generating database schema via Tortoise...")
+    print("Generating database schema via Tortoise...")
     await Tortoise.generate_schemas()
     await Tortoise.close_connections()
 
