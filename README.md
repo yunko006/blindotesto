@@ -1,6 +1,14 @@
 # blindotesto
  app to create blindtest playlist
 
+# TODO list :
+
+- [ ] ajouter fonction pour créer une api key
+- [ ] tester la fonction
+- [ ] ajouter Oauth2
+- [ ] refractor code pour créer des blindtests
+- [ ] voir que les playlists qu'un utilisateur a créer 
+
 # Idée de base : 
 
 Créer une api qui permet de créer et de faire des blindtests ! 
@@ -26,3 +34,14 @@ Endpoint | HTTP Method | CRUD Method | Result
 /blindtest/:blindtest_id/submit | POST | CREATE | permet aux participants de soumettre leurs réponses pour le blindtest en cours (id),les parametres pourraient inclure : song_id et la réponse du participant
 /blindtest/:blindtest_id/leaderboard | GET | READ | obtenir classement du blindtest en cours
 /blindtest/:blindtest_id | DELETE | DELETE | supprime un blindtest spécifique
+
+# Autentification : 
+
+## OAuth2 
+
+todo 
+
+## API key
+
+- user se connecte > bouton pour recevoir une api key 
+- utiliser sa key pour créer des blindtests 
