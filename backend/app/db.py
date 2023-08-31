@@ -10,10 +10,6 @@ log = logging.getLogger("uvicorn")
 TORTOISE_ORM = {
     "connections": {"default": os.environ.get("DATABASE_URL")},
     "apps": {
-        "models": {
-            "models": ["app.models.tortoise", "aerich.models"],
-            "default_connection": "default",
-        },
         "models_playlist": {
             "models": ["app.models.playlist"],
             "default_connection": "default",
@@ -26,7 +22,7 @@ def init_db(app) -> None:
     register_tortoise(
         app,
         db_url=os.environ.get("DATABASE_URL"),
-        modules={"models": ["app.models.tortoise", "app.models.playlist"]},
+        modules={"models": ["app.models.playlist"]},
         generate_schemas=False,
         add_exception_handlers=True,
     )
@@ -40,7 +36,7 @@ async def generate_schema() -> None:
     await Tortoise.init(
         db_url=os.environ.get("DATABASE_URL"),
         modules={
-            "models": ["models.tortoise", "models.playlist"]
+            "models": ["models.playlist"]
         },  # bien faire attention juste "models.playlist" et non "app.models.tortoise"
     )
     print("Generating database schema via Tortoise...")
