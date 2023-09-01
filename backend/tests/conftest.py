@@ -31,7 +31,9 @@ def test_app_with_db():
     register_tortoise(
         app,
         db_url=os.environ.get("DATABASE_TEST_URL"),
-        modules={"models": ["app.models.playlist"]},
+        modules={
+            "models": ["app.models.playlist", "app.models.user", "app.models.key"]
+        },
         generate_schemas=True,
         add_exception_handlers=True,
     )
