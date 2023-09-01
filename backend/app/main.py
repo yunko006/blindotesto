@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from tortoise.contrib.fastapi import register_tortoise
 
-from .api import ping, playlists
+from .api import ping, playlists, users
 from .config import Settings
 
 
@@ -29,6 +29,8 @@ def create_app() -> FastAPI:
 
     app.include_router(ping.router)
     app.include_router(playlists.router, prefix="/playlists", tags=["playlists"])
+    app.include_router(users.router, prefix="/users", tags=["users"])
+
     return app
 
 
