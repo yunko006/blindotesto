@@ -1,6 +1,6 @@
 from typing import List
 from fastapi import APIRouter, HTTPException
-from app.models.pydantic import PlaylistPayloadSchema, PlaylistResponseSchema
+from app.schemas.playlist import PlaylistPayloadSchema, PlaylistResponseSchema
 from app.crud.base import post, get_all, get_one
 from app.models.playlist import PlaylistSchema
 

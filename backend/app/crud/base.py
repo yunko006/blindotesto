@@ -1,5 +1,5 @@
 from typing import List, Union
-from app.models.pydantic import PlaylistPayloadSchema
+from app.schemas.playlist import PlaylistPayloadSchema
 from app.models.playlist import Playlist
 
 
