@@ -26,11 +26,11 @@ CREATE TABLE IF NOT EXISTS "api_keys" (
 );
 CREATE TABLE IF NOT EXISTS "users" (
     "id" SERIAL NOT NULL PRIMARY KEY,
-    "email" VARCHAR(255) NOT NULL,
+    "username" VARCHAR(255) NOT NULL,
     "hashed_password" VARCHAR(255) NOT NULL,
     "is_active" BOOL NOT NULL  DEFAULT True,
     "is_superuser" BOOL NOT NULL  DEFAULT False,
-    "api_key_id" INT NOT NULL REFERENCES "api_keys" ("id") ON DELETE CASCADE
+    "api_key_id" INT REFERENCES "api_keys" ("id") ON DELETE CASCADE
 );"""
 
 

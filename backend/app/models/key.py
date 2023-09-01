@@ -1,4 +1,5 @@
 from tortoise import fields, models
+import secrets
 
 
 class ApiKey(models.Model):
@@ -12,5 +13,7 @@ class ApiKey(models.Model):
     class Meta:
         table = "api_keys"
 
-    def generate_api_key():
-        pass
+    @classmethod
+    def generate_api_key(cls, length=16):
+        generated_key = secrets.token_urlsafe(length)
+        return generated_key
