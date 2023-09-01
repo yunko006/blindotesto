@@ -1,19 +1,25 @@
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr
 
+from app.schemas.api_key import UserApiKeys
+
 # User model pydantic
 
 
-# Shared properties
-class UserBase(BaseModel):
+class UserPayloadSchema(BaseModel):
     username: str
-    email: Optional[EmailStr] = None
-    is_active: Optional[bool] = True
-    is_superuser: bool = False
-
-
-# Properties to receive via API on creation
-class UserCreate(UserBase):
-    username: str
-    email: EmailStr
     password: str
+
+
+class UserResponseSchema(BaseModel):
+    id: int
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    hashed_password: str
+    is_active: bool
+    is_superuser: bool
+    api_key_id: int
+    api_key: UserApiKeys
