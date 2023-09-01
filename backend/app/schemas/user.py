@@ -22,4 +22,3 @@ class UserResponse(BaseModel):
     is_active: bool
     is_superuser: bool
     api_key_id: int
-    api_key: UserApiKeys
