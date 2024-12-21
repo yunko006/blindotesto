@@ -20,7 +20,12 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      - /app/.next
     ports:
       - "3000:3000"
-    depends_on:
-      - backend
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true # besoin pour hot reload windows
+      - WATCHPACK_POLLING=true # besoin pour hot reload windows
+    command: npm run dev:docker
+    restart: always

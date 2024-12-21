@@ -15,6 +15,7 @@ export default function Home() {
   return (
     <main className="p-4">
       <h1>Message from backend: {message}</h1>
+      <p>test docker hot reload windows</p>
     </main>
   );
 }
