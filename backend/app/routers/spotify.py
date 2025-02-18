@@ -1,9 +1,9 @@
 import httpx
 from app.config import settings
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from urllib.parse import urlencode
 from fastapi.responses import RedirectResponse
-from app.models.spotify import TokenResponse
+from app.models.spotify import RefreshTokenRequest, TokenResponse
 
 router = APIRouter()
 
@@ -26,8 +26,8 @@ async def login():
     # suggester par la doc spotify
     scope = "user-read-private user-read-email"
     params = {
-        "client_id": settings.CLIENT_ID,
         "response_type": "code",
+        "client_id": settings.CLIENT_ID,
         "scope": scope,
         "redirect_uri": settings.REDIRECT_URI,
         "show_dialog": "true",
@@ -97,7 +97,53 @@ async def spotify_callback(
     # token_info['expires_in'] = 3600
 
 
-# cote front pas dans le backend
-@router.get("/refresh-token")
-def refresh_token():
-    pass
+@router.post("/refresh-token")
+async def refresh_token(request: RefreshTokenRequest):
+    """
+    Rafraîchit le token d'accès en utilisant le refresh token
+    """
+    token_url = "https://accounts.spotify.com/api/token"
+
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": request.refresh_token,
+        "client_id": settings.CLIENT_ID,
+        "client_secret": settings.CLIENT_SECRET,
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                token_url,
+                data=data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Erreur lors du rafraîchissement du token: {str(e)}",
+            )
+
+
+@router.get("/playlists")
+async def get_playlists(request: Request):
+    """
+    Récupère les playlists de l'utilisateur connecté.
+    """
+    access_token = request.headers.get("Authorization")
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Token manquant")
+
+    playlist_url = "https://api.spotify.com/v1/me/playlists"
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                playlist_url, headers={"Authorization": access_token}
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=400, detail=f"Erreur Spotify: {str(e)}")
