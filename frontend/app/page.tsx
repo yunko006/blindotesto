@@ -1,5 +1,7 @@
-// frontend/app/page.tsx
 "use client";
+import SpotifyLoginButton from "@/components/oauth/login";
+import SpotifyPlaylists from "@/components/playlist/list";
+
 import { useEffect, useState } from "react";
 
 export default function Home() {
@@ -15,7 +17,8 @@ export default function Home() {
   return (
     <main className="p-4">
       <h1>Message from backend: {message}</h1>
-      <p>test docker hot reload windows</p>
+      <SpotifyLoginButton></SpotifyLoginButton>
+      <SpotifyPlaylists />
     </main>
   );
 }
