@@ -1,3 +1,4 @@
+from base64 import b64encode
 import httpx
 from app.config import settings
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -98,32 +99,32 @@ async def spotify_callback(
 
 
 @router.post("/refresh-token")
-async def refresh_token(request: RefreshTokenRequest):
-    """
-    Rafraîchit le token d'accès en utilisant le refresh token
-    """
+async def refresh_token(refresh_token: RefreshTokenRequest):
     token_url = "https://accounts.spotify.com/api/token"
 
-    data = {
-        "grant_type": "refresh_token",
-        "refresh_token": request.refresh_token,
-        "client_id": settings.CLIENT_ID,
-        "client_secret": settings.CLIENT_SECRET,
-    }
+    # Création des données requises
+    data = {"grant_type": "refresh_token", "refresh_token": refresh_token.refresh_token}
+
+    # Création de l'en-tête d'autorisation Basic
+    auth_str = f"{settings.CLIENT_ID}:{settings.CLIENT_SECRET}"
+    b64_auth = b64encode(auth_str.encode()).decode()
 
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(
                 token_url,
-                data=data,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                data=data,  # Simple, juste grant_type et refresh_token
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Authorization": f"Basic {b64_auth}",  # Ajout de l'autorisation Basic
+                },
             )
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as e:
             raise HTTPException(
-                status_code=400,
-                detail=f"Erreur lors du rafraîchissement du token: {str(e)}",
+                status_code=response.status_code if response else 500,
+                detail={"error": f"Spotify API error: {str(e)}"},
             )
 
 
