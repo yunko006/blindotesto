@@ -18,3 +18,7 @@ class TokenResponse(BaseModel):
     expires_in: int
     refresh_token: str
     scope: str
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
