@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.routers import spotify
+
 app = FastAPI()
 
 origins = [
-    "http://localhost",
-    # default nextjs port
-    "http://localhost:3000",
+    "http://localhost:3000",  # Frontend Next.js
+    "http://localhost:8000",  # Backend FastAPI
 ]
 
 app.add_middleware(
@@ -16,6 +17,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(spotify.router, prefix="/spotify", tags=["spotify"])
 
 
 @app.get("/hello")
