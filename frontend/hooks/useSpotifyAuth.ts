@@ -1,35 +1,61 @@
-// hooks/useSpotifyAuth.ts
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 
 interface SpotifyTokens {
   access_token: string;
   refresh_token: string;
   expires_in: number;
-  token_type: string;
-}
-
-interface SpotifyError {
-  error: string;
-  error_description?: string;
 }
 
 export const useSpotifyAuth = () => {
-  const queryClient = useQueryClient();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleLogout = () => {
+  const clearRefreshTimeout = useCallback(() => {
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+      refreshTimeoutRef.current = null;
+    }
+  }, []);
+
+  const handleLogout = useCallback(() => {
     localStorage.removeItem("spotify_access_token");
     localStorage.removeItem("spotify_refresh_token");
     localStorage.removeItem("spotify_token_expiry");
-    queryClient.invalidateQueries({ queryKey: ["spotifyAuth"] });
-  };
+    setIsAuthenticated(false);
+    clearRefreshTimeout();
+  }, [clearRefreshTimeout]);
 
-  // Mutation pour rafraîchir le token
-  const refreshTokenMutation = useMutation({
-    mutationKey: ["refreshToken"],
-    mutationFn: async (): Promise<SpotifyTokens> => {
-      const refresh_token = localStorage.getItem("spotify_refresh_token");
-      if (!refresh_token) throw new Error("NO_REFRESH_TOKEN");
+  const scheduleNextRefresh = useCallback(
+    (expiryTime: number) => {
+      clearRefreshTimeout();
+
+      const timeUntilExpiry = expiryTime - Date.now();
+      // Rafraîchir 7 minutes avant l'expiration
+      const timeUntilRefresh = timeUntilExpiry - 7 * 60 * 1000;
+
+      console.log(
+        `🕒 Prochain rafraîchissement dans ${Math.floor(
+          timeUntilRefresh / 60000
+        )} minutes`
+      );
+
+      return timeUntilRefresh;
+    },
+    [clearRefreshTimeout]
+  );
+
+  const refreshAccessToken = useCallback(async () => {
+    const refresh_token = localStorage.getItem("spotify_refresh_token");
+    if (!refresh_token) {
+      console.log("❌ Pas de refresh token trouvé");
+      handleLogout();
+      return;
+    }
+
+    try {
+      console.log("🔄 Début du rafraîchissement du token...");
+      setIsLoading(true);
 
       const response = await fetch(
         "http://localhost:8000/spotify/refresh-token",
@@ -43,81 +69,97 @@ export const useSpotifyAuth = () => {
       );
 
       if (!response.ok) {
-        // Si on a une erreur 422 ou 400, on déconnecte l'utilisateur
-        if (response.status === 422 || response.status === 400) {
-          handleLogout();
-          throw new Error("INVALID_REFRESH_TOKEN");
-        }
-        const errorData: SpotifyError = await response.json();
-        throw new Error(errorData.error_description || "REFRESH_FAILED");
+        throw new Error("Failed to refresh token");
       }
 
-      return response.json();
-    },
-    retry: 1, // Limite le nombre de tentatives en cas d'échec
-    onSuccess: (data) => {
+      const data: SpotifyTokens = await response.json();
+
       localStorage.setItem("spotify_access_token", data.access_token);
       if (data.refresh_token) {
         localStorage.setItem("spotify_refresh_token", data.refresh_token);
       }
-      localStorage.setItem(
-        "spotify_token_expiry",
-        String(Date.now() + data.expires_in * 1000)
+
+      const expiryTime = Date.now() + data.expires_in * 1000;
+      localStorage.setItem("spotify_token_expiry", String(expiryTime));
+
+      const expiryDate = new Date(expiryTime);
+      console.log(
+        `✅ Token rafraîchi avec succès! Expire le: ${expiryDate.toLocaleString()}`
       );
-    },
-    onError: (error: Error) => {
-      if (
-        error.message === "INVALID_REFRESH_TOKEN" ||
-        error.message === "NO_REFRESH_TOKEN"
-      ) {
-        handleLogout();
+      console.log(
+        `⏳ Durée de validité: ${Math.floor(data.expires_in / 60)} minutes`
+      );
+
+      setIsAuthenticated(true);
+
+      // Calculer et programmer le prochain rafraîchissement
+      const timeUntilRefresh = scheduleNextRefresh(expiryTime);
+      if (timeUntilRefresh > 0) {
+        refreshTimeoutRef.current = setTimeout(
+          refreshAccessToken,
+          timeUntilRefresh
+        );
       }
-    },
-  });
-
-  // Query pour vérifier l'état du token
-  const { data: authStatus } = useQuery({
-    queryKey: ["spotifyAuth"],
-    queryFn: async () => {
-      const accessToken = localStorage.getItem("spotify_access_token");
-      const tokenExpiry = localStorage.getItem("spotify_token_expiry");
-      const refreshToken = localStorage.getItem("spotify_refresh_token");
-
-      if (!accessToken || !tokenExpiry || !refreshToken) {
-        return { isAuthenticated: false, needsRefresh: false };
-      }
-
-      const timeUntilExpiry = Number(tokenExpiry) - Date.now();
-
-      // Token expiré
-      if (timeUntilExpiry <= 0) {
-        return { isAuthenticated: true, needsRefresh: true };
-      }
-
-      // Token proche de l'expiration (5 minutes)
-      if (timeUntilExpiry < 5 * 60 * 1000) {
-        return { isAuthenticated: true, needsRefresh: true };
-      }
-
-      return { isAuthenticated: true, needsRefresh: false };
-    },
-    // Arrête les vérifications si l'utilisateur n'est pas authentifié
-    refetchInterval: () => {
-      return 30 * 1000;
-    },
-  });
-
-  // Effet pour gérer le rafraîchissement automatique
-  useEffect(() => {
-    if (authStatus?.isAuthenticated && authStatus.needsRefresh) {
-      refreshTokenMutation.mutate();
+    } catch (error) {
+      console.error("❌ Erreur lors du rafraîchissement:", error);
+      handleLogout();
+    } finally {
+      setIsLoading(false);
     }
-  }, [authStatus, refreshTokenMutation]);
+  }, [handleLogout, scheduleNextRefresh]);
+
+  // Vérifier l'authentification au montage du composant
+  useEffect(() => {
+    const initAuth = () => {
+      const accessToken = localStorage.getItem("spotify_access_token");
+      const refreshToken = localStorage.getItem("spotify_refresh_token");
+      const expiryTime = localStorage.getItem("spotify_token_expiry");
+
+      if (!accessToken || !refreshToken || !expiryTime) {
+        console.log("🔑 Tokens manquants, déconnexion nécessaire");
+        handleLogout();
+        return;
+      }
+
+      const timeUntilExpiry = Number(expiryTime) - Date.now();
+      console.log(
+        `🕒 Temps restant avant expiration: ${Math.floor(
+          timeUntilExpiry / 60000
+        )} minutes`
+      );
+
+      setIsAuthenticated(true);
+
+      // Programmer le prochain rafraîchissement
+      const timeUntilRefresh = scheduleNextRefresh(Number(expiryTime));
+      if (timeUntilRefresh > 0) {
+        refreshTimeoutRef.current = setTimeout(
+          refreshAccessToken,
+          timeUntilRefresh
+        );
+      } else {
+        refreshAccessToken();
+      }
+    };
+
+    initAuth();
+
+    return clearRefreshTimeout;
+  }, [
+    clearRefreshTimeout,
+    scheduleNextRefresh,
+    refreshAccessToken,
+    handleLogout,
+  ]);
 
   return {
-    isAuthenticated: authStatus?.isAuthenticated ?? false,
-    isLoading: refreshTokenMutation.isPending,
+    isAuthenticated,
+    isLoading,
     logout: handleLogout,
-    refreshToken: () => refreshTokenMutation.mutate(),
+    refreshToken: refreshAccessToken,
+    getAccessToken: useCallback(
+      () => localStorage.getItem("spotify_access_token"),
+      []
+    ),
   };
 };
