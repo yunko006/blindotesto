@@ -148,3 +148,24 @@ async def get_playlists(request: Request):
             return response.json()
         except httpx.HTTPError as e:
             raise HTTPException(status_code=400, detail=f"Erreur Spotify: {str(e)}")
+
+
+@router.get("/playlists/{playlist_id}/tracks")
+async def get_playlist_tracks(playlist_id: str, request: Request):
+    """
+    Récupère les chansons d'une playlist spécifique.
+    """
+    access_token = request.headers.get("Authorization")
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Token manquant")
+
+    tracks_url = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks"
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                tracks_url, headers={"Authorization": access_token}
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=400, detail=f"Erreur Spotify: {str(e)}")
