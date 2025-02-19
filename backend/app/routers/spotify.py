@@ -25,7 +25,13 @@ async def login():
         RedirectResponse: Redirection vers la page d'authentification Spotify
     """
     # suggester par la doc spotify
-    scope = "user-read-private user-read-email"
+    scope = (
+        "streaming "  # Pour le Web Playback SDK
+        "user-read-private "
+        "user-read-email "
+        "user-read-playback-state "  # Pour lire l'état de lecture
+        "user-modify-playback-state"  # Pour contrôler la lecture
+    )
     params = {
         "response_type": "code",
         "client_id": settings.CLIENT_ID,
