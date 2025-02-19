@@ -1,7 +1,8 @@
 "use client";
 import SpotifyLoginButton from "@/components/oauth/login";
-import SpotifyPlaylists from "@/components/playlist/list";
-
+import SpotifyPlayer from "@/components/spotify/player";
+import SpotifyPlaylists from "@/components/spotify/playlist";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 
 export default function Home() {
@@ -16,6 +17,8 @@ export default function Home() {
 
   return (
     <main className="p-4">
+      <Image src={`/blindotesto.png`} alt={"logo"} width="1200" height="1200" />
+      <SpotifyPlayer />
       <h1>Message from backend: {message}</h1>
       <SpotifyLoginButton></SpotifyLoginButton>
       <SpotifyPlaylists />
