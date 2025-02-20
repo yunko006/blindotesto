@@ -57,16 +57,13 @@ export const useSpotifyAuth = () => {
       console.log("🔄 Début du rafraîchissement du token...");
       setIsLoading(true);
 
-      const response = await fetch(
-        "http://localhost:8000/spotify/refresh-token",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ refresh_token }),
-        }
-      );
+      const response = await fetch("http://localhost:8000/auth/refresh-token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ refresh_token }),
+      });
 
       if (!response.ok) {
         throw new Error("Failed to refresh token");

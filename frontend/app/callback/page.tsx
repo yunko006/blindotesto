@@ -1,6 +1,5 @@
-// app/callback/page.tsx
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -12,18 +11,41 @@ interface SpotifyTokenResponse {
 }
 
 export default function CallbackPage() {
+  const [isClient, setIsClient] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const hasProcessedCode = useRef(false); // Pour tracker si le code a déjà été traité
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
   const callbackMutation = useMutation({
     mutationFn: async (code: string): Promise<SpotifyTokenResponse> => {
-      const response = await fetch(
-        `http://localhost:8000/spotify/callback?code=${code}`
-      );
-      if (!response.ok) {
-        throw new Error("Erreur lors de la récupération du token");
+      if (isProcessing || hasProcessedCode.current) {
+        console.log("Évitement d'un traitement multiple du code");
+        return Promise.reject("Code déjà traité");
       }
-      return response.json();
+
+      setIsProcessing(true);
+      hasProcessedCode.current = true;
+
+      try {
+        const response = await fetch(
+          `http://localhost:8000/auth/callback?code=${encodeURIComponent(code)}`
+        );
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error("Erreur de l'API:", errorText);
+          throw new Error(errorText);
+        }
+
+        return response.json();
+      } finally {
+        setIsProcessing(false);
+      }
     },
     onSuccess: (data) => {
       localStorage.setItem("spotify_access_token", data.access_token);
@@ -34,30 +56,41 @@ export default function CallbackPage() {
       );
       router.push("/");
     },
-    onError: (error) => {
-      console.error("Erreur:", error);
-      router.push("/");
+    onError: (error: Error) => {
+      console.error("Erreur d'authentification:", error);
+      router.push(`/?auth_error=${encodeURIComponent(error.message)}`);
     },
   });
 
   useEffect(() => {
+    if (!isClient) return;
+
     const code = searchParams.get("code");
     const error = searchParams.get("error");
 
     if (error) {
-      console.error("Erreur Spotify:", error);
-      router.push("/");
+      router.push(`/?auth_error=${encodeURIComponent(error)}`);
       return;
     }
 
-    if (code) {
+    if (code && !hasProcessedCode.current) {
       callbackMutation.mutate(code);
     }
-  }, [callbackMutation, router, searchParams]);
+  }, [callbackMutation, isClient, router, searchParams]); // Retiré isProcessing des dépendances
 
   return (
     <div className="flex items-center justify-center min-h-screen">
-      <div className="animate-pulse">Authentification en cours...</div>
+      {callbackMutation.isError ? (
+        <div className="text-red-500 p-4 rounded-lg bg-red-50">
+          <h3 className="font-bold mb-2">Erreur d&apos;authentification</h3>
+          <p>{callbackMutation.error.message}</p>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center gap-2">
+          <div className="animate-spin h-8 w-8 border-4 border-blue-500 rounded-full border-t-transparent"></div>
+          <div>Authentification en cours...</div>
+        </div>
+      )}
     </div>
   );
 }

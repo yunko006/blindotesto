@@ -15,7 +15,7 @@ const SpotifyLoginButton = () => {
   const callbackMutation = useMutation({
     mutationFn: async (code: string): Promise<SpotifyTokenResponse> => {
       const response = await fetch(
-        `http://localhost:8000/spotify/callback?code=${code}`
+        `http://localhost:8000/auth/callback?code=${code}`
       );
       if (!response.ok) {
         throw new Error("Erreur lors de la récupération du token");
@@ -41,7 +41,7 @@ const SpotifyLoginButton = () => {
 
   const handleLogin = () => {
     // Redirection vers l'endpoint FastAPI /login
-    window.location.href = "http://localhost:8000/spotify/login";
+    window.location.href = "http://localhost:8000/auth/login";
   };
 
   return (
