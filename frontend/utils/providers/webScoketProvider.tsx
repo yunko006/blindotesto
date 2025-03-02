@@ -1,5 +1,12 @@
 "use client";
-import { createContext, useContext, useRef, useState, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useRef,
+  useState,
+  ReactNode,
+  useCallback,
+} from "react";
 
 interface WebSocketContextType {
   connectToRoom: (roomId: string, clientId: string) => void;
@@ -22,50 +29,69 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const [roomId, setRoomId] = useState<string | null>(null);
   const webSocketRef = useRef<WebSocket | null>(null);
 
-  const connectToRoom = (roomId: string, clientId: string) => {
-    // Ne reconnectez pas si déjà connecté à cette room
-    if (connected && roomId === roomId) {
-      return;
-    }
+  // Utiliser useCallback pour mémoriser la fonction
+  const connectToRoom = useCallback(
+    (newRoomId: string, clientId: string) => {
+      // Ne reconnectez pas si déjà connecté à cette room
+      if (connected && roomId === newRoomId) {
+        return;
+      }
 
-    // Fermer toute connexion existante
-    if (webSocketRef.current) {
-      webSocketRef.current.close();
-    }
+      // Fermer toute connexion existante
+      if (webSocketRef.current) {
+        webSocketRef.current.close();
+        webSocketRef.current = null; // Assurez-vous de réinitialiser la référence
+      }
 
-    console.log(`Connexion à la room ${roomId}`);
+      // Ajoutez un délai avant de vous reconnecter
+      setTimeout(() => {
+        try {
+          console.log(
+            `Tentative de connexion à la room ${newRoomId} en tant que ${clientId}`
+          );
 
-    // Créer une nouvelle connexion
-    const ws = new WebSocket(
-      `ws://localhost:8000/ws/${roomId}?client_id=${clientId}`
-    );
+          // Créer une nouvelle connexion
+          const ws = new WebSocket(
+            `ws://localhost:8000/ws/${newRoomId}?client_id=${clientId}`
+          );
 
-    ws.onopen = () => {
-      console.log(`Connecté à la room ${roomId}`);
-      setConnected(true);
-      setRoomId(roomId);
-    };
+          ws.onopen = () => {
+            console.log(`Connecté à la room ${newRoomId}`);
+            setConnected(true);
+            setRoomId(newRoomId);
+          };
 
-    ws.onmessage = (event) => {
-      const message = event.data;
-      setMessages((prev) => [...prev, message]);
-    };
+          ws.onmessage = (event) => {
+            const message = event.data;
+            setMessages((prev) => [...prev, message]);
+          };
 
-    ws.onclose = () => {
-      console.log(`Déconnecté de la room ${roomId}`);
-      setConnected(false);
-      setRoomId(null);
-    };
+          ws.onclose = (event) => {
+            console.log(
+              `Déconnecté de la room ${newRoomId}`,
+              event.code,
+              event.reason
+            );
+            setConnected(false);
+            setRoomId(null);
+          };
 
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-      setConnected(false);
-    };
+          ws.onerror = (error) => {
+            console.error("WebSocket error:", error);
+            setConnected(false);
+          };
 
-    webSocketRef.current = ws;
-  };
+          webSocketRef.current = ws;
+        } catch (error) {
+          console.error("Erreur lors de la création du WebSocket:", error);
+        }
+      }, 500); // Délai de 500ms avant de se reconnecter
+    },
+    [connected, roomId]
+  );
 
-  const disconnectFromRoom = () => {
+  // Mémoriser les autres fonctions aussi
+  const disconnectFromRoom = useCallback(() => {
     if (webSocketRef.current) {
       webSocketRef.current.close();
       webSocketRef.current = null;
@@ -73,13 +99,16 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     setMessages([]);
     setConnected(false);
     setRoomId(null);
-  };
+  }, []);
 
-  const sendMessage = (message: string) => {
-    if (webSocketRef.current && connected) {
-      webSocketRef.current.send(message);
-    }
-  };
+  const sendMessage = useCallback(
+    (message: string) => {
+      if (webSocketRef.current && connected) {
+        webSocketRef.current.send(message);
+      }
+    },
+    [connected]
+  );
 
   return (
     <WebSocketContext.Provider
