@@ -2,7 +2,7 @@
 import { createContext, useContext, useRef, useState, ReactNode } from "react";
 
 interface WebSocketContextType {
-  connectToRoom: (id: string) => void;
+  connectToRoom: (roomId: string, clientId: string) => void;
   disconnectFromRoom: () => void;
   sendMessage: (message: string) => void;
   messages: string[];
@@ -22,9 +22,9 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   const [roomId, setRoomId] = useState<string | null>(null);
   const webSocketRef = useRef<WebSocket | null>(null);
 
-  const connectToRoom = (id: string) => {
+  const connectToRoom = (roomId: string, clientId: string) => {
     // Ne reconnectez pas si déjà connecté à cette room
-    if (connected && roomId === id) {
+    if (connected && roomId === roomId) {
       return;
     }
 
@@ -33,15 +33,17 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       webSocketRef.current.close();
     }
 
-    console.log(`Connexion à la room ${id}`);
+    console.log(`Connexion à la room ${roomId}`);
 
     // Créer une nouvelle connexion
-    const ws = new WebSocket(`ws://localhost:8000/ws/${id}`);
+    const ws = new WebSocket(
+      `ws://localhost:8000/ws/${roomId}?client_id=${clientId}`
+    );
 
     ws.onopen = () => {
-      console.log(`Connecté à la room ${id}`);
+      console.log(`Connecté à la room ${roomId}`);
       setConnected(true);
-      setRoomId(id);
+      setRoomId(roomId);
     };
 
     ws.onmessage = (event) => {
@@ -50,7 +52,7 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     };
 
     ws.onclose = () => {
-      console.log(`Déconnecté de la room ${id}`);
+      console.log(`Déconnecté de la room ${roomId}`);
       setConnected(false);
       setRoomId(null);
     };
