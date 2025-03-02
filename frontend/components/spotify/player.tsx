@@ -98,7 +98,7 @@ const SpotifyPlayer = () => {
       }
       console.log("🎫 Token trouvé");
       const player = new window.Spotify.Player({
-        name: "Web Playback SDK Quick Start Player",
+        name: "Blindotest Web Playback SDK Player",
         getOAuthToken: (cb: (token: string) => void) => {
           console.log("🔑 Callback OAuth appelé");
           cb(token);
