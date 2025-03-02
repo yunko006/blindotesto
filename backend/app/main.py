@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import spotify, oauth
+from app.routers import spotify, oauth, websockets
 
 app = FastAPI()
 
@@ -20,6 +20,7 @@ app.add_middleware(
 
 app.include_router(spotify.router, prefix="/spotify", tags=["spotify"])
 app.include_router(oauth.router, prefix="/auth", tags=["authentication"])
+app.include_router(websockets.router, prefix="/ws", tags=["websockets"])
 
 
 @app.get("/hello")
