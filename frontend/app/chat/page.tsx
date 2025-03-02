@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 
 export default function ChatPage() {
   const [inputMessage, setInputMessage] = useState("");
+  const [clientId, setClientId] = useState<string>("");
   const { connectToRoom, sendMessage, messages, connected, roomId } =
     useWebSocket();
   const searchParams = useSearchParams();
@@ -13,15 +14,16 @@ export default function ChatPage() {
 
   // Se connecter à la room spécifiée dans l'URL
   useEffect(() => {
-    // Utilisez une variable pour empêcher une deuxième connexion
-    let isFirstRender = true;
-
-    if (isFirstRender) {
-      console.log(`Connexion à la room: ${roomParam}`);
-      connectToRoom(roomParam);
-      isFirstRender = false;
+    // Générer un ID client aléatoire s'il n'est pas déjà défini
+    if (!clientId) {
+      const randomId = `client_${Math.floor(Math.random() * 10000)}`;
+      setClientId(randomId);
     }
-  }, [connectToRoom, roomParam]); // Tableau de dépendances vide = exécuté une seule fois
+
+    if (clientId) {
+      connectToRoom(roomParam, clientId);
+    }
+  }, [roomParam, clientId, connectToRoom]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
