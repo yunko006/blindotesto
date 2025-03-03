@@ -26,12 +26,10 @@ async def websocket_endpoint(
             await manager.send_personal_message(f"You: {data}", room_id, client_id)
             # Diffuser à tous les autres clients dans la room
             await manager.broadcast_to_room(
-                f"Client {client_id}: {data}",
+                f"{client_id}: {data}",
                 room_id,
                 exclude_client=client_id,  # Ne pas renvoyer le message à l'expéditeur
             )
         except WebSocketDisconnect:
             manager.disconnect(room_id, client_id)
-            await manager.broadcast_to_room(
-                f"Client {client_id} left room {room_id}", room_id
-            )
+            await manager.broadcast_to_room(f"{client_id} left room {room_id}", room_id)
