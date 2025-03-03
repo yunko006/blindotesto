@@ -1,10 +1,20 @@
-// components/ChatComponent.tsx
-import React, { useState, FormEvent } from "react";
+import React, { useState, FormEvent, useRef, useEffect } from "react";
 import { useWebSocket } from "@/utils/providers/webScoketProvider";
 
 const ChatComponent = () => {
   const [inputMessage, setInputMessage] = useState("");
   const { sendMessage, messages, connected, roomId } = useWebSocket();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom whenever messages change
+  useEffect(() => {
+    // Ajouter un petit délai pour s'assurer que le DOM est mis à jour
+    const timeoutId = setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+
+    return () => clearTimeout(timeoutId);
+  }, [messages]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -30,21 +40,29 @@ const ChatComponent = () => {
           </div>
         </div>
       </div>
-
       <div className="bg-gray-100 rounded p-4 h-60 overflow-y-auto mb-4">
         {messages.length === 0 ? (
           <p className="text-gray-500 italic">Aucun message pour le moment</p>
         ) : (
           <ul>
-            {messages.map((message, index) => (
-              <li key={index} className="mb-2 pb-2 border-b border-gray-200">
-                {message}
-              </li>
-            ))}
+            {messages.map((message, index) => {
+              // Enlever le préfixe "client" s'il existe
+              let displayMessage = message;
+              if (message.startsWith("client")) {
+                // Remplacer "client nom:" par "nom:"
+                displayMessage = message.replace(/^client\s+(\w+):/, "$1:");
+              }
+              return (
+                <li key={index} className="mb-2 pb-2 border-b border-gray-200">
+                  {displayMessage}
+                </li>
+              );
+            })}
           </ul>
         )}
+        {/* Élément invisible pour le scroll automatique */}
+        <div ref={messagesEndRef} />
       </div>
-
       <form onSubmit={handleSubmit} className="flex">
         <input
           type="text"
