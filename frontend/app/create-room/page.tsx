@@ -17,8 +17,8 @@ export default function CreateRoomPage() {
     const finalClientId =
       clientId || `user_${Math.floor(Math.random() * 10000)}`;
 
-    // Rediriger vers la page de chat avec les paramètres
-    router.push(`/chat?room=${roomId}&client=${finalClientId}`);
+    // Rediriger vers la nouvelle page room avec les paramètres
+    router.push(`/room/${roomId}?client=${finalClientId}`);
   };
 
   return (
@@ -26,7 +26,6 @@ export default function CreateRoomPage() {
       <h1 className="text-2xl font-bold mb-6 text-center">
         Créer ou rejoindre une room
       </h1>
-
       <form onSubmit={handleCreateRoom} className="space-y-4">
         <div>
           <label
@@ -45,7 +44,6 @@ export default function CreateRoomPage() {
             className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-
         <div>
           <label
             htmlFor="clientId"
@@ -62,7 +60,6 @@ export default function CreateRoomPage() {
             className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-
         <button
           type="submit"
           disabled={isCreating || !roomId}
