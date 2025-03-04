@@ -1,20 +1,50 @@
 // app/room/[id]/page.tsx
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useWebSocket } from "@/utils/providers/webScoketProvider";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import PlayersComponent from "@/components/players/listePlayers";
 import RoomConfigComponent from "@/components/rooms/roomConfig";
 import ChatComponent from "@/components/rooms/chat";
 
+// Interface pour la configuration de la room
+interface RoomConfig {
+  roomName: string;
+  password: string;
+  playlist: string;
+  clipDuration: string;
+  clipMoment: string;
+  buzzerOffDuration: string;
+  cutMusicAfterBuzz: boolean;
+}
+
 export default function RoomPage() {
   const { connectToRoom, disconnectFromRoom } = useWebSocket();
-
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
   const roomParam = params.id as string;
   const clientParam = searchParams.get("client");
+
+  // État pour stocker la configuration actuelle de la room
+  const [roomConfig, setRoomConfig] = useState<RoomConfig>({
+    roomName: roomParam || "nomdelaromm",
+    password: "voir le pwd",
+    playlist: "Pop",
+    clipDuration: "15 sec",
+    clipMoment: "refrain",
+    buzzerOffDuration: "3 sec",
+    cutMusicAfterBuzz: true,
+  });
+
+  // État pour les joueurs connectés
+  const [connectedPlayers, setConnectedPlayers] = useState([
+    { id: 1, name: "matthieu" },
+    { id: 2, name: "benoit" },
+    { id: 3, name: "aude" },
+    { id: 4, name: "momo" },
+    { id: 5, name: "thomas" },
+  ]);
 
   // Rediriger vers la page de création si les paramètres sont manquants
   useEffect(() => {
@@ -32,7 +62,6 @@ export default function RoomPage() {
       );
       connectToRoom(roomParam, clientParam);
       isFirstRender = false;
-
       // Nettoyer proprement à la déconnexion
       return () => {
         console.log(`Nettoyage: Déconnexion de la room ${roomParam}`);
@@ -40,6 +69,14 @@ export default function RoomPage() {
       };
     }
   }, [roomParam, clientParam]); // On retire connectToRoom et disconnectFromRoom des dépendances
+
+  // Gestionnaire pour mettre à jour la configuration
+  const handleConfigChange = (newConfig: RoomConfig) => {
+    setRoomConfig(newConfig);
+
+    // Vous pouvez également sauvegarder la configuration localement si nécessaire
+    localStorage.setItem(`roomConfig_${roomParam}`, JSON.stringify(newConfig));
+  };
 
   // Si les paramètres sont manquants, afficher un message de chargement
   if (!roomParam || !clientParam) {
@@ -50,26 +87,6 @@ export default function RoomPage() {
     );
   }
 
-  // Données simulées pour les joueurs connectés (à remplacer par vos données réelles)
-  const connectedPlayers = [
-    { id: 1, name: "matthieu" },
-    { id: 2, name: "benoit" },
-    { id: 3, name: "aude" },
-    { id: 4, name: "momo" },
-    { id: 5, name: "thomas" },
-  ];
-
-  // Configuration de la room (à remplacer par vos données réelles)
-  const roomConfig = {
-    roomName: roomParam || "nomdelaromm",
-    password: "voir le pwd",
-    playlist: "—",
-    clipDuration: "—",
-    clipMoment: "—",
-    buzzerOffDuration: "3sec",
-    cutMusicAfterBuzz: true,
-  };
-
   return (
     <div className="container mx-auto p-4 max-w-6xl">
       <div className="border-2 border-black rounded-lg p-6">
@@ -77,7 +94,6 @@ export default function RoomPage() {
           <h1 className="text-3xl font-bold">Room : {roomConfig.roomName}</h1>
           <p className="text-md">pwd : {roomConfig.password}</p>
         </div>
-
         <div className="flex flex-wrap -mx-2">
           {/* Joueurs connectés */}
           <div className="w-full md:w-1/3 px-2 mb-4">
@@ -86,15 +102,16 @@ export default function RoomPage() {
               <PlayersComponent players={connectedPlayers} />
             </div>
           </div>
-
           {/* Configuration de la room */}
           <div className="w-full md:w-1/3 px-2 mb-4">
             <div className="border-2 border-black rounded-lg h-full p-4">
               <h2 className="text-xl font-bold mb-3">reglès</h2>
-              <RoomConfigComponent config={roomConfig} />
+              <RoomConfigComponent
+                config={roomConfig}
+                onConfigChange={handleConfigChange}
+              />
             </div>
           </div>
-
           {/* Chat */}
           <div className="w-full md:w-1/3 px-2 mb-4">
             <div className="border-2 border-black rounded-lg h-full p-4">
@@ -103,13 +120,6 @@ export default function RoomPage() {
             </div>
           </div>
         </div>
-
-        {/* <div className="text-right mt-4">
-          <div className="inline-block">
-            <p className="font-bold">QR code pour join</p>
-            <div className="w-24 h-24 bg-gray-300 border-2 border-black rounded"></div>
-          </div>
-        </div> */}
       </div>
     </div>
   );
