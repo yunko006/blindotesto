@@ -2,7 +2,7 @@
 import React from "react";
 
 interface Player {
-  id: number;
+  id: number | string; // Permettre des id de type string ou number
   name: string;
 }
 
@@ -25,6 +25,15 @@ const PlayersComponent: React.FC<PlayersComponentProps> = ({ players }) => {
 
   // Calculer le nombre maximum de lignes
   const maxRows = Math.max(leftColumn.length, rightColumn.length);
+
+  // Si aucun joueur, afficher un message
+  if (players.length === 0) {
+    return (
+      <div className="py-3 text-center text-gray-500">
+        Aucun joueur connecté
+      </div>
+    );
+  }
 
   return (
     <table className="w-full border-collapse">
