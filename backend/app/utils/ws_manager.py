@@ -1,4 +1,5 @@
-from typing import Dict
+import json
+from typing import Dict, List
 from fastapi import WebSocket
 
 
@@ -47,6 +48,26 @@ class ConnectionManager:
             for client_id, connection in self.active_connections[room_id].items():
                 if exclude_client is None or client_id != exclude_client:
                     await connection.send_text(message)
+
+    def get_connected_players(self, room_id: str) -> List[dict]:
+        """Retourne la liste des joueurs connectés à une room."""
+        if room_id not in self.active_connections:
+            return []
+
+        return [
+            {
+                "id": client_id,
+                "name": client_id,
+            }  # Utilisez client_id comme nom si vous n'avez pas de noms distincts
+            for client_id in self.active_connections[room_id].keys()
+        ]
+
+    async def broadcast_player_list(self, room_id: str):
+        """Envoie la liste mise à jour des joueurs à tous les clients dans une room."""
+        if room_id in self.active_connections:
+            players = self.get_connected_players(room_id)
+            message = json.dumps({"type": "player_list", "players": players})
+            await self.broadcast_to_room(message, room_id)
 
 
 ws_manager = ConnectionManager()
