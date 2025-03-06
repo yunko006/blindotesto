@@ -11,8 +11,9 @@ import {
 
 // Définir l'interface pour un joueur
 interface Player {
-  id: string | number;
+  id: string;
   name: string;
+  score: number;
 }
 
 // Interface pour la configuration de la room
@@ -26,55 +27,53 @@ interface RoomConfig {
   cutMusicAfterBuzz: boolean;
 }
 
-// Types de base pour les messages
-interface BaseMessage {
-  type: string;
+// Interface pour l'état complet de la room
+interface RoomState {
+  id: string;
+  name: string;
+  has_password: boolean;
+  game_state: "waiting" | "playing" | "paused" | "ended";
+  buzzer_state: "inactive" | "active" | "buzzed";
+  current_buzzer: string | null;
+  players: Record<string, { name: string; score: number }>;
+  config: {
+    playlist: string;
+    clipDuration: string;
+    clipMoment: string;
+    buzzerOffDuration: string;
+    cutMusicAfterBuzz: boolean;
+  };
+  current_song: any;
 }
 
-// Types spécifiques pour chaque message
-interface PlayerListMessage extends BaseMessage {
-  type: "player_list";
-  players: Player[];
-}
-
-interface ChatMessage extends BaseMessage {
-  type: "chat_message";
-  sender: string;
+// Interface pour un message de chat
+interface ChatMessageData {
+  id: string;
+  sender_id: string;
+  sender_name: string;
   content: string;
-  timestamp?: string;
+  room_id: string;
+  sender_role: string;
+  is_system: boolean;
+  timestamp: string;
 }
 
-interface ConfigUpdateMessage extends BaseMessage {
-  type: "config_update";
-  config: RoomConfig;
-  updated_by?: string;
-}
-
-interface GetPlayerListMessage extends BaseMessage {
-  type: "get_player_list";
-}
-
-interface PlayerDisconnectedMessage extends BaseMessage {
-  type: "player_disconnected";
-  player: string;
-}
-
-interface BuzzMessage extends BaseMessage {
-  type: "buzz";
-  player: string;
-}
-
-// Type générique de message JSON
+// Types de base pour le WebSocketContext
 interface WebSocketContextType {
   connectToRoom: (roomId: string, clientId: string) => void;
   disconnectFromRoom: () => void;
   sendMessage: (message: string) => void;
-  messages: string[];
-  connected: boolean;
+  lastMessage: string | null;
+  chatMessages: ChatMessageData[];
+  isConnected: boolean;
   roomId: string | null;
-  connectedPlayers: Player[];
+  players: Player[];
+  roomState: RoomState | null;
   roomConfig: RoomConfig | null;
   updateRoomConfig: (config: RoomConfig) => void;
+  startGame: () => void;
+  sendBuzz: () => void;
+  reconnectAttempts: number;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -88,19 +87,25 @@ const defaultRoomConfig: RoomConfig = {
   roomName: "",
   password: "",
   playlist: "Pop",
-  clipDuration: "15 sec",
+  clipDuration: "15",
   clipMoment: "refrain",
-  buzzerOffDuration: "3 sec",
+  buzzerOffDuration: "3",
   cutMusicAfterBuzz: true,
 };
 
 export function WebSocketProvider({ children }: WebSocketProviderProps) {
-  const [messages, setMessages] = useState<string[]>([]);
-  const [connected, setConnected] = useState(false);
+  const [lastMessage, setLastMessage] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessageData[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
   const [roomId, setRoomId] = useState<string | null>(null);
-  const [connectedPlayers, setConnectedPlayers] = useState<Player[]>([]);
+  const [clientId, setClientId] = useState<string | null>(null);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [roomState, setRoomState] = useState<RoomState | null>(null);
   const [roomConfig, setRoomConfig] = useState<RoomConfig | null>(null);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const webSocketRef = useRef<WebSocket | null>(null);
+
+  const MAX_RECONNECT_ATTEMPTS = 3;
 
   // Mettre à jour la configuration et l'envoyer à tous les clients
   const updateRoomConfig = useCallback(
@@ -108,150 +113,170 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       setRoomConfig(config);
 
       // Envoyer la mise à jour aux autres clients
-      if (webSocketRef.current && connected) {
-        const message: ConfigUpdateMessage = {
+      if (webSocketRef.current && isConnected) {
+        const message = {
           type: "config_update",
-          config: config,
+          config: {
+            playlist: config.playlist,
+            clipDuration: config.clipDuration,
+            clipMoment: config.clipMoment,
+            buzzerOffDuration: config.buzzerOffDuration,
+            cutMusicAfterBuzz: config.cutMusicAfterBuzz,
+          },
         };
         webSocketRef.current.send(JSON.stringify(message));
       }
-
-      // Sauvegarder localement si nécessaire
-      if (roomId) {
-        localStorage.setItem(`roomConfig_${roomId}`, JSON.stringify(config));
-      }
     },
-    [connected, roomId]
+    [isConnected]
   );
 
-  // Utiliser useCallback pour mémoriser la fonction
+  // Connexion à une room
   const connectToRoom = useCallback(
-    (newRoomId: string, clientId: string) => {
-      // Ne reconnectez pas si déjà connecté à cette room
-      if (connected && roomId === newRoomId) {
+    (newRoomId: string, newClientId: string) => {
+      // Limiter les tentatives de reconnexion
+      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        console.error("Nombre maximum de tentatives de reconnexion atteint");
         return;
       }
 
-      // Définir le roomId pour pouvoir l'utiliser dans d'autres fonctions
-      setRoomId(newRoomId);
-
-      // Essayer de récupérer la configuration depuis le localStorage
-      const savedConfig = localStorage.getItem(`roomConfig_${newRoomId}`);
-      if (savedConfig) {
-        try {
-          const parsedConfig = JSON.parse(savedConfig) as RoomConfig;
-          setRoomConfig(parsedConfig);
-        } catch (e) {
-          console.error(
-            "Erreur lors du parsing de la configuration sauvegardée:",
-            e
-          );
-          setRoomConfig({
-            ...defaultRoomConfig,
-            roomName: newRoomId,
-          });
-        }
-      } else {
-        // Configuration par défaut si aucune configuration n'est trouvée
-        setRoomConfig({
-          ...defaultRoomConfig,
-          roomName: newRoomId,
-        });
+      // Ne pas reconnecter si déjà connecté à cette room avec ce client
+      if (isConnected && roomId === newRoomId && clientId === newClientId) {
+        return;
       }
 
       // Fermer toute connexion existante
       if (webSocketRef.current) {
-        webSocketRef.current.close();
-        webSocketRef.current = null; // Assurez-vous de réinitialiser la référence
+        try {
+          webSocketRef.current.close();
+        } catch (error) {
+          console.error("Erreur lors de la fermeture de la connexion:", error);
+        }
+        webSocketRef.current = null;
       }
 
-      // Ajoutez un délai avant de vous reconnecter
       setTimeout(() => {
         try {
           console.log(
-            `Tentative de connexion à la room ${newRoomId} en tant que ${clientId}`
+            `Tentative de connexion ${
+              reconnectAttempts + 1
+            } à la room ${newRoomId} en tant que ${newClientId}`
           );
 
-          // Créer une nouvelle connexion
           const ws = new WebSocket(
-            `ws://localhost:8000/ws/${newRoomId}?client_id=${clientId}`
+            `ws://localhost:8000/ws/${newRoomId}?client_id=${newClientId}`
           );
 
           ws.onopen = () => {
             console.log(`Connecté à la room ${newRoomId}`);
-            setConnected(true);
+            setIsConnected(true);
+            setRoomId(newRoomId);
+            setClientId(newClientId);
+            setReconnectAttempts(0); // Réinitialiser les tentatives
 
-            // Demander immédiatement la liste des joueurs et la configuration
-            const message: GetPlayerListMessage = { type: "get_player_list" };
-            ws.send(JSON.stringify(message));
+            // Demander immédiatement la liste des joueurs et l'état de la room
+            ws.send(JSON.stringify({ type: "get_player_list" }));
           };
 
           ws.onmessage = (event) => {
             try {
-              // Essayer de parser le message comme JSON
-              const data = JSON.parse(event.data) as BaseMessage;
+              // Stocker le message brut
+              setLastMessage(event.data);
+
+              // Parser le message
+              const data = JSON.parse(event.data);
+              console.log("Message reçu:", data);
 
               // Traiter différents types de messages
               switch (data.type) {
-                case "player_list": {
-                  // Le cast est sûr ici car on a vérifié le type
-                  const playerListData = data as PlayerListMessage;
-                  setConnectedPlayers(playerListData.players);
-                  console.log(
-                    "Liste des joueurs mise à jour:",
-                    playerListData.players
-                  );
-                  break;
-                }
-                case "chat_message": {
-                  const chatData = data as ChatMessage;
-                  // Ajouter le message au chat
-                  setMessages((prev) => [
-                    ...prev,
-                    `${chatData.sender}: ${chatData.content}`,
-                  ]);
-                  break;
-                }
-                case "config_update": {
-                  const configData = data as ConfigUpdateMessage;
-                  // Mise à jour de la configuration de la room
-                  console.log(
-                    "Configuration de la room mise à jour:",
-                    configData.config
-                  );
-                  setRoomConfig(configData.config);
+                case "room_state":
+                  if (data.state) {
+                    setRoomState(data.state);
 
-                  // Sauvegarder localement
-                  localStorage.setItem(
-                    `roomConfig_${newRoomId}`,
-                    JSON.stringify(configData.config)
-                  );
+                    // Mettre à jour la liste des joueurs
+                    if (data.state.players) {
+                      const playersList = Object.entries(
+                        data.state.players
+                      ).map(([id, playerData]: [string, any]) => ({
+                        id,
+                        name: playerData.name,
+                        score: playerData.score,
+                      }));
+                      setPlayers(playersList);
+                    }
+
+                    // Mettre à jour la configuration
+                    if (data.state.config) {
+                      setRoomConfig({
+                        roomName: data.state.name,
+                        password: data.state.has_password ? "********" : "",
+                        playlist: data.state.config.playlist,
+                        clipDuration: data.state.config.clipDuration,
+                        clipMoment: data.state.config.clipMoment,
+                        buzzerOffDuration: data.state.config.buzzerOffDuration,
+                        cutMusicAfterBuzz: data.state.config.cutMusicAfterBuzz,
+                      });
+                    }
+                  }
                   break;
-                }
-                case "player_disconnected": {
-                  const disconnectData = data as PlayerDisconnectedMessage;
-                  console.log(`Joueur déconnecté: ${disconnectData.player}`);
-                  // Vous pourriez ajouter une notification ici
+
+                case "player_list":
+                  if (data.players) {
+                    const playersList = Object.entries(data.players).map(
+                      ([id, playerData]: [string, any]) => ({
+                        id,
+                        name: playerData.name,
+                        score: playerData.score || 0,
+                      })
+                    );
+                    setPlayers(playersList);
+                  }
                   break;
-                }
-                case "buzz": {
-                  const buzzData = data as BuzzMessage;
-                  console.log(`Buzz reçu du joueur: ${buzzData.player}`);
-                  // Traiter le buzz ici
+
+                case "chat_history":
+                  if (data.messages) {
+                    setChatMessages(data.messages);
+                  }
                   break;
-                }
+
+                case "chat_message":
+                  if (data.message) {
+                    setChatMessages((prev) => [...prev, data.message]);
+                  }
+                  break;
+
+                case "config_updated":
+                  if (data.config) {
+                    setRoomConfig((prev) => {
+                      if (!prev)
+                        return {
+                          ...defaultRoomConfig,
+                          ...data.config,
+                        };
+
+                      return {
+                        ...prev,
+                        playlist: data.config.playlist || prev.playlist,
+                        clipDuration:
+                          data.config.clipDuration || prev.clipDuration,
+                        clipMoment: data.config.clipMoment || prev.clipMoment,
+                        buzzerOffDuration:
+                          data.config.buzzerOffDuration ||
+                          prev.buzzerOffDuration,
+                        cutMusicAfterBuzz:
+                          data.config.cutMusicAfterBuzz !== undefined
+                            ? data.config.cutMusicAfterBuzz
+                            : prev.cutMusicAfterBuzz,
+                      };
+                    });
+                  }
+                  break;
+
                 default:
-                  // Ajouter d'autres types de messages selon vos besoins
-                  console.log("Message reçu de type inconnu:", data);
-                  // Par défaut, traiter comme un message brut
-                  setMessages((prev) => [...prev, event.data]);
+                  console.log("Message de type inconnu:", data);
               }
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            } catch (_error) {
-              // error pas use dans le code c'est normal
-              // Si ce n'est pas du JSON valide, traiter comme un message simple
-              console.log("Message texte reçu:", event.data);
-              setMessages((prev) => [...prev, event.data]);
+            } catch (error) {
+              console.error("Erreur lors du traitement du message:", error);
+              console.log("Message brut:", event.data);
             }
           };
 
@@ -261,14 +286,35 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
               event.code,
               event.reason
             );
-            setConnected(false);
-            setRoomId(null);
-            setConnectedPlayers([]); // Vider la liste des joueurs à la déconnexion
+
+            // Tentative de reconnexion automatique avec un délai exponentiel
+            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+              const timeout = Math.pow(2, reconnectAttempts) * 1000;
+              setReconnectAttempts((prev) => prev + 1);
+
+              setTimeout(() => {
+                connectToRoom(newRoomId, newClientId);
+              }, timeout);
+            } else {
+              // Réinitialisation complète si max tentatives atteintes
+              setIsConnected(false);
+              setRoomId(null);
+              setClientId(null);
+              setPlayers([]);
+              setRoomState(null);
+              setRoomConfig(null);
+              setChatMessages([]);
+            }
           };
 
           ws.onerror = (error) => {
             console.error("WebSocket error:", error);
-            setConnected(false);
+            setIsConnected(false);
+
+            // Incrémenter les tentatives de reconnexion en cas d'erreur
+            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+              setReconnectAttempts((prev) => prev + 1);
+            }
           };
 
           webSocketRef.current = ws;
@@ -277,46 +323,88 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
         }
       }, 500); // Délai de 500ms avant de se reconnecter
     },
-    [connected, roomId]
+    [isConnected, roomId, clientId, reconnectAttempts]
   );
 
-  // Mémoriser les autres fonctions aussi
+  // Déconnexion de la room
   const disconnectFromRoom = useCallback(() => {
     if (webSocketRef.current) {
-      webSocketRef.current.close();
+      try {
+        webSocketRef.current.close();
+      } catch (error) {
+        console.error("Erreur lors de la fermeture de la connexion:", error);
+      }
       webSocketRef.current = null;
     }
-    setMessages([]);
-    setConnected(false);
+    setLastMessage(null);
+    setChatMessages([]);
+    setIsConnected(false);
     setRoomId(null);
-    setConnectedPlayers([]);
+    setClientId(null);
+    setPlayers([]);
+    setRoomState(null);
     setRoomConfig(null);
+    setReconnectAttempts(0);
   }, []);
 
+  // Envoyer un message
   const sendMessage = useCallback(
     (message: string) => {
-      if (webSocketRef.current && connected) {
-        webSocketRef.current.send(message);
+      if (webSocketRef.current && isConnected) {
+        try {
+          const fullMessage = JSON.stringify({
+            type: "chat_message",
+            content: message,
+          });
+          webSocketRef.current.send(fullMessage);
+        } catch (error) {
+          console.warn("Impossible d'envoyer le message:", error);
+        }
+      } else {
+        console.warn("Impossible d'envoyer le message: WebSocket non connecté");
       }
     },
-    [connected]
+    [isConnected]
   );
 
-  // Demander la liste des joueurs périodiquement (optionnel)
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+  // Démarrer le jeu
+  const startGame = useCallback(() => {
+    if (webSocketRef.current && isConnected) {
+      webSocketRef.current.send(JSON.stringify({ type: "start_game" }));
+    }
+  }, [isConnected]);
 
-    if (connected && roomId) {
-      interval = setInterval(() => {
-        const message: GetPlayerListMessage = { type: "get_player_list" };
-        sendMessage(JSON.stringify(message));
-      }, 10000); // Toutes les 10 secondes
+  // Envoyer un buzz
+  const sendBuzz = useCallback(() => {
+    if (webSocketRef.current && isConnected) {
+      webSocketRef.current.send(JSON.stringify({ type: "buzz" }));
+    }
+  }, [isConnected]);
+
+  // Ping pour maintenir la connexion active
+  useEffect(() => {
+    let pingInterval: NodeJS.Timeout | null = null;
+
+    if (isConnected) {
+      pingInterval = setInterval(() => {
+        try {
+          if (
+            webSocketRef.current &&
+            webSocketRef.current.readyState === WebSocket.OPEN
+          ) {
+            // Envoyer un ping silencieux pour maintenir la connexion
+            webSocketRef.current.send(JSON.stringify({ type: "ping" }));
+          }
+        } catch (error) {
+          console.error("Erreur lors de l'envoi du ping:", error);
+        }
+      }, 30000); // Ping toutes les 30 secondes
     }
 
     return () => {
-      if (interval) clearInterval(interval);
+      if (pingInterval) clearInterval(pingInterval);
     };
-  }, [connected, roomId, sendMessage]);
+  }, [isConnected]);
 
   return (
     <WebSocketContext.Provider
@@ -324,12 +412,17 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
         connectToRoom,
         disconnectFromRoom,
         sendMessage,
-        messages,
-        connected,
+        lastMessage,
+        chatMessages,
+        isConnected,
         roomId,
-        connectedPlayers,
+        players,
+        roomState,
         roomConfig,
         updateRoomConfig,
+        startGame,
+        sendBuzz,
+        reconnectAttempts,
       }}
     >
       {children}

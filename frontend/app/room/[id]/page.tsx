@@ -1,4 +1,3 @@
-// app/room/[id]/page.tsx
 "use client";
 import { useEffect } from "react";
 import { useWebSocket } from "@/utils/providers/webScoketProvider";
@@ -21,9 +20,12 @@ export default function RoomPage() {
   const {
     connectToRoom,
     disconnectFromRoom,
-    connectedPlayers,
-    roomConfig, // Utiliser la config du provider
-    updateRoomConfig, // Utiliser la méthode de mise à jour
+    players, // Nouveau nom pour les joueurs connectés
+    roomState, // Nouvel état pour toutes les données de la room
+    roomConfig, // Configuration de la room
+    updateRoomConfig, // Méthode pour mettre à jour la config
+    startGame, // Nouvelle méthode pour démarrer le jeu
+    isConnected, // État de connexion
   } = useWebSocket();
 
   const router = useRouter();
@@ -34,12 +36,12 @@ export default function RoomPage() {
 
   // Configuration locale par défaut (utilisée seulement si roomConfig est null)
   const defaultConfig: RoomConfig = {
-    roomName: roomParam || "nomdelaromm",
-    password: "voir le pwd",
+    roomName: roomParam || "Room sans nom",
+    password: "",
     playlist: "Pop",
-    clipDuration: "15 sec",
+    clipDuration: "15",
     clipMoment: "refrain",
-    buzzerOffDuration: "3 sec",
+    buzzerOffDuration: "3",
     cutMusicAfterBuzz: true,
   };
 
@@ -52,13 +54,11 @@ export default function RoomPage() {
 
   // Se connecter à la room avec l'identifiant client
   useEffect(() => {
-    let isFirstRender = true;
-    if (roomParam && clientParam && isFirstRender) {
+    if (roomParam && clientParam) {
       console.log(
         `Connexion à la room ${roomParam} en tant que ${clientParam}`
       );
       connectToRoom(roomParam, clientParam);
-      isFirstRender = false;
 
       // Nettoyer proprement à la déconnexion
       return () => {
@@ -66,14 +66,16 @@ export default function RoomPage() {
         disconnectFromRoom();
       };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomParam, clientParam]); // On retire connectToRoom et disconnectFromRoom des dépendances
+  }, [roomParam, clientParam, connectToRoom, disconnectFromRoom]);
 
   // Gestionnaire pour mettre à jour la configuration
   const handleConfigChange = (newConfig: RoomConfig) => {
-    // Utiliser la méthode updateRoomConfig du provider
-    // qui se charge d'envoyer la mise à jour à tous les clients
     updateRoomConfig(newConfig);
+  };
+
+  // Gestionnaire pour démarrer la partie
+  const handleStartGame = () => {
+    startGame();
   };
 
   // Si les paramètres sont manquants, afficher un message de chargement
@@ -81,6 +83,15 @@ export default function RoomPage() {
     return (
       <div className="p-4 text-center">
         Redirection vers la création de room...
+      </div>
+    );
+  }
+
+  // Si pas encore connecté, afficher un indicateur de chargement
+  if (!isConnected) {
+    return (
+      <div className="p-4 text-center">
+        <div className="animate-pulse">Connexion à la room en cours...</div>
       </div>
     );
   }
@@ -95,36 +106,67 @@ export default function RoomPage() {
           <h1 className="text-3xl font-bold">
             Room : {currentConfig.roomName}
           </h1>
-          <p className="text-md">pwd : {currentConfig.password}</p>
+          {currentConfig.password && (
+            <p className="text-md">Protégée par mot de passe</p>
+          )}
+
+          {/* Informations sur l'état du jeu */}
+          {roomState && (
+            <p className="mt-2 text-blue-600">
+              État :{" "}
+              {roomState.game_state === "waiting"
+                ? "En attente de joueurs"
+                : roomState.game_state === "playing"
+                ? "Partie en cours"
+                : roomState.game_state === "paused"
+                ? "Partie en pause"
+                : "Partie terminée"}
+            </p>
+          )}
         </div>
+
         <div className="flex flex-wrap -mx-2">
           {/* Joueurs connectés */}
           <div className="w-full md:w-1/3 px-2 mb-4">
             <div className="border-2 border-black rounded-lg h-full p-4">
               <h2 className="text-xl font-bold mb-3">
-                joueurs connectés ({connectedPlayers.length})
+                Joueurs connectés ({players.length})
               </h2>
-              <PlayersComponent players={connectedPlayers} />
+              <PlayersComponent players={players} />
             </div>
           </div>
+
           {/* Configuration de la room */}
           <div className="w-full md:w-1/3 px-2 mb-4">
             <div className="border-2 border-black rounded-lg h-full p-4">
-              <h2 className="text-xl font-bold mb-3">reglès</h2>
+              <h2 className="text-xl font-bold mb-3">Règles</h2>
               <RoomConfigComponent
                 config={currentConfig}
                 onConfigChange={handleConfigChange}
               />
             </div>
           </div>
+
           {/* Chat */}
           <div className="w-full md:w-1/3 px-2 mb-4">
             <div className="border-2 border-black rounded-lg h-full p-4">
-              <h2 className="text-xl font-bold mb-3">chat</h2>
+              <h2 className="text-xl font-bold mb-3">Chat</h2>
               <ChatComponent />
             </div>
           </div>
         </div>
+
+        {/* Bouton pour démarrer la partie (visible seulement en état d'attente) */}
+        {roomState && roomState.game_state === "waiting" && (
+          <div className="mt-4 text-center">
+            <button
+              onClick={handleStartGame}
+              className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded"
+            >
+              Démarrer la partie
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
