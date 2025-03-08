@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useWebSocket } from "@/utils/providers/webScoketProvider";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import PlayersComponent from "@/components/players/listePlayers";
@@ -10,6 +10,15 @@ interface Player {
   id: string;
   name: string;
   score: number;
+}
+
+interface Song {
+  id: string;
+  title: string;
+  artist: string;
+  album?: string;
+  year?: number;
+  // Ajoutez d'autres propriétés selon vos besoins
 }
 
 interface RoomState {
@@ -27,7 +36,7 @@ interface RoomState {
     buzzerOffDuration: string;
     cutMusicAfterBuzz: boolean;
   };
-  current_song: any;
+  current_song: Song | null;
 }
 
 interface RoomConfig {
@@ -38,6 +47,13 @@ interface RoomConfig {
   clipMoment: string;
   buzzerOffDuration: string;
   cutMusicAfterBuzz: boolean;
+}
+
+interface WebSocketMessage {
+  type: string;
+  state?: RoomState;
+  players?: Record<string, { name: string; score: number }>;
+  config?: Partial<RoomConfig>;
 }
 
 export default function RoomPage() {
@@ -63,26 +79,29 @@ export default function RoomPage() {
   const clientParam = searchParams.get("client");
 
   // Configuration locale par défaut (utilisée seulement si roomConfig est null)
-  const defaultConfig: RoomConfig = {
-    roomName: roomParam || "Room sans nom",
-    password: "",
-    playlist: "Pop",
-    clipDuration: "15",
-    clipMoment: "refrain",
-    buzzerOffDuration: "3",
-    cutMusicAfterBuzz: true,
-  };
+  const defaultConfig = useMemo<RoomConfig>(
+    () => ({
+      roomName: roomParam || "Room sans nom",
+      password: "",
+      playlist: "Pop",
+      clipDuration: "15",
+      clipMoment: "refrain",
+      buzzerOffDuration: "3",
+      cutMusicAfterBuzz: true,
+    }),
+    [roomParam]
+  );
 
   // Gestionnaire de messages pour les mises à jour d'état de la room
   const handleRoomStateMessages = useCallback(
-    (data) => {
+    (data: WebSocketMessage) => {
       if (data.type === "room_state" && data.state) {
         setRoomState(data.state);
 
         // Extraire les joueurs de l'état de la room
         if (data.state.players) {
           const playersList = Object.entries(data.state.players).map(
-            ([id, playerData]: [string, any]) => ({
+            ([id, playerData]) => ({
               id,
               name: playerData.name,
               score: playerData.score || 0,
@@ -105,7 +124,7 @@ export default function RoomPage() {
         }
       } else if (data.type === "player_list" && data.players) {
         const playersList = Object.entries(data.players).map(
-          ([id, playerData]: [string, any]) => ({
+          ([id, playerData]) => ({
             id,
             name: playerData.name,
             score: playerData.score || 0,

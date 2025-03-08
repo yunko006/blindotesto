@@ -19,6 +19,13 @@ interface ChatMessage {
   is_self?: boolean;
 }
 
+// Interface pour les messages WebSocket entrants
+interface WebSocketChatMessage {
+  type: string;
+  messages?: ChatMessage[];
+  message?: ChatMessage;
+}
+
 const ChatComponent = ({ roomId }: ChatComponentProps) => {
   const [inputMessage, setInputMessage] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -36,19 +43,20 @@ const ChatComponent = ({ roomId }: ChatComponentProps) => {
   // S'abonner aux messages de chat
   useEffect(() => {
     // Gestionnaire de messages
-    const handleChatMessages = (data: any) => {
+    const handleChatMessages = (data: WebSocketChatMessage) => {
       if (data.type === "chat_history" && Array.isArray(data.messages)) {
         setChatMessages(data.messages);
       } else if (data.type === "chat_message" && data.message) {
-        setChatMessages((prev) => [...prev, data.message]);
+        // Créer explicitement un nouvel objet ChatMessage pour éviter les problèmes de typage
+        const newMessage: ChatMessage = { ...data.message };
+        setChatMessages((prev) => [...prev, newMessage]);
       } else if (data.type === "system_message" && data.message) {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            ...data.message,
-            is_system: true,
-          },
-        ]);
+        // Vérifier explicitement que data.message n'est pas undefined
+        const systemMessage: ChatMessage = {
+          ...data.message,
+          is_system: true,
+        };
+        setChatMessages((prev) => [...prev, systemMessage]);
       }
     };
 
@@ -90,6 +98,7 @@ const ChatComponent = ({ roomId }: ChatComponentProps) => {
         hour: "2-digit",
         minute: "2-digit",
       });
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (error) {
       return "";
     }
