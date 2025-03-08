@@ -82,6 +82,22 @@ const SpotifyPlaylists = () => {
     enabled: isAuthenticated,
   });
 
+  // Ajoutez ce code temporairement pour déboguer
+  const checkAccountStatus = async () => {
+    const token = localStorage.getItem("spotify_access_token");
+    try {
+      const response = await fetch("https://api.spotify.com/v1/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      console.log("Account data:", data);
+      // Vérifiez dans la console si product: "premium" est présent
+    } catch (error) {
+      console.error("Error checking account:", error);
+    }
+  };
+  checkAccountStatus();
+
   const {
     data: tracks,
     isLoading: isLoadingTracks,
