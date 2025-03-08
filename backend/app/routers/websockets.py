@@ -21,8 +21,10 @@ async def websocket_endpoint(
         # 1. Vérifier si la room existe
         room = room_manager.get_room(room_id)
         if not room:
-            # Si la room n'existe pas, la créer
-            room_id = room_manager.create_room()
+            # Si la room n'existe pas, la créer avec l'ID fourni
+            room_id = room_manager.create_room(
+                room_id=room_id, room_name=f"Room-{room_id}"
+            )
             room = room_manager.get_room(room_id)
 
         # 2. Établir la connexion WebSocket

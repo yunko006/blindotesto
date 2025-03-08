@@ -151,9 +151,21 @@ class RoomManager:
     def __init__(self):
         self.rooms: Dict[str, Room] = {}
 
-    def create_room(self, room_name: str = None, password: str = None) -> str:
-        """Crée une nouvelle room et retourne son ID."""
-        room_id = str(uuid.uuid4())[:8]
+    def create_room(
+        self, room_id: str = None, room_name: str = None, password: str = None
+    ) -> str:
+        """
+        Crée une nouvelle room et retourne son ID.
+        Si room_id est fourni, utilise cet ID. Sinon, génère un ID aléatoire.
+        """
+        # Si aucun ID n'est fourni, on en génère un
+        if not room_id:
+            room_id = str(uuid.uuid4())[:8]
+        # Si la room existe déjà, on retourne simplement l'ID
+        elif room_id in self.rooms:
+            return room_id
+
+        # Créer la room avec l'ID spécifié ou généré
         self.rooms[room_id] = Room(room_id, room_name, password)
         return room_id
 
