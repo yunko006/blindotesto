@@ -1,428 +1,200 @@
 "use client";
+
 import {
   createContext,
   useContext,
+  useEffect,
   useRef,
   useState,
-  ReactNode,
   useCallback,
-  useEffect,
+  ReactNode,
 } from "react";
 
-// Définir l'interface pour un joueur
-interface Player {
-  id: string;
-  name: string;
-  score: number;
+// Define message types based on your app's communication protocol
+interface BaseMessage {
+  type: string;
 }
 
-// Interface pour la configuration de la room
-interface RoomConfig {
-  roomName: string;
-  password: string;
-  playlist: string;
-  clipDuration: string;
-  clipMoment: string;
-  buzzerOffDuration: string;
-  cutMusicAfterBuzz: boolean;
+// Message from server to client
+interface ServerMessage extends BaseMessage {
+  [key: string]: unknown;
 }
 
-// Interface pour l'état complet de la room
-interface RoomState {
-  id: string;
-  name: string;
-  has_password: boolean;
-  game_state: "waiting" | "playing" | "paused" | "ended";
-  buzzer_state: "inactive" | "active" | "buzzed";
-  current_buzzer: string | null;
-  players: Record<string, { name: string; score: number }>;
-  config: {
-    playlist: string;
-    clipDuration: string;
-    clipMoment: string;
-    buzzerOffDuration: string;
-    cutMusicAfterBuzz: boolean;
-  };
-  current_song: any;
+// Message from client to server
+interface ClientMessage extends BaseMessage {
+  [key: string]: unknown;
 }
 
-// Interface pour un message de chat
-interface ChatMessageData {
-  id: string;
-  sender_id: string;
-  sender_name: string;
-  content: string;
-  room_id: string;
-  sender_role: string;
-  is_system: boolean;
-  timestamp: string;
-}
-
-// Types de base pour le WebSocketContext
+// Define the WebSocket context type
 interface WebSocketContextType {
-  connectToRoom: (roomId: string, clientId: string) => void;
-  disconnectFromRoom: () => void;
-  sendMessage: (message: string) => void;
-  lastMessage: string | null;
-  chatMessages: ChatMessageData[];
+  // Connection management
+  connect: (roomId: string, clientId: string) => void;
+  disconnect: () => void;
   isConnected: boolean;
-  roomId: string | null;
-  players: Player[];
-  roomState: RoomState | null;
-  roomConfig: RoomConfig | null;
-  updateRoomConfig: (config: RoomConfig) => void;
-  startGame: () => void;
-  sendBuzz: () => void;
-  reconnectAttempts: number;
+
+  // Basic WebSocket methods
+  sendMessage: (messageObj: ClientMessage | string) => boolean;
+
+  // Message handling
+  lastMessage: ServerMessage | null;
+  addMessageListener: (listener: (data: ServerMessage) => void) => number;
+  removeMessageListener: (id: number) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
 
-interface WebSocketProviderProps {
-  children: ReactNode;
+// Simple message listener type
+interface MessageListener {
+  id: number;
+  callback: (data: ServerMessage) => void;
 }
 
-// Configuration par défaut
-const defaultRoomConfig: RoomConfig = {
-  roomName: "",
-  password: "",
-  playlist: "Pop",
-  clipDuration: "15",
-  clipMoment: "refrain",
-  buzzerOffDuration: "3",
-  cutMusicAfterBuzz: true,
-};
+interface WebSocketProviderProps {
+  children: ReactNode;
+  serverUrl?: string;
+}
 
-export function WebSocketProvider({ children }: WebSocketProviderProps) {
-  const [lastMessage, setLastMessage] = useState<string | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessageData[]>([]);
+export function WebSocketProvider({
+  children,
+  serverUrl = "ws://localhost:8000/ws",
+}: WebSocketProviderProps) {
+  // WebSocket reference
+  const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [roomId, setRoomId] = useState<string | null>(null);
-  const [clientId, setClientId] = useState<string | null>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [roomState, setRoomState] = useState<RoomState | null>(null);
-  const [roomConfig, setRoomConfig] = useState<RoomConfig | null>(null);
-  const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const webSocketRef = useRef<WebSocket | null>(null);
+  const [lastMessage, setLastMessage] = useState<ServerMessage | null>(null);
 
-  const MAX_RECONNECT_ATTEMPTS = 3;
+  // Track listeners with useRef to avoid dependency issues
+  const listeners = useRef<MessageListener[]>([]);
+  const nextListenerId = useRef<number>(1);
 
-  // Mettre à jour la configuration et l'envoyer à tous les clients
-  const updateRoomConfig = useCallback(
-    (config: RoomConfig) => {
-      setRoomConfig(config);
-
-      // Envoyer la mise à jour aux autres clients
-      if (webSocketRef.current && isConnected) {
-        const message = {
-          type: "config_update",
-          config: {
-            playlist: config.playlist,
-            clipDuration: config.clipDuration,
-            clipMoment: config.clipMoment,
-            buzzerOffDuration: config.buzzerOffDuration,
-            cutMusicAfterBuzz: config.cutMusicAfterBuzz,
-          },
-        };
-        webSocketRef.current.send(JSON.stringify(message));
-      }
-    },
-    [isConnected]
-  );
-
-  // Connexion à une room
-  const connectToRoom = useCallback(
-    (newRoomId: string, newClientId: string) => {
-      // Limiter les tentatives de reconnexion
-      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-        console.error("Nombre maximum de tentatives de reconnexion atteint");
-        return;
+  // Connect to a room
+  const connect = useCallback(
+    (roomId: string, clientId: string) => {
+      // Close existing connection if any
+      if (wsRef.current) {
+        wsRef.current.close();
       }
 
-      // Ne pas reconnecter si déjà connecté à cette room avec ce client
-      if (isConnected && roomId === newRoomId && clientId === newClientId) {
-        return;
-      }
-
-      // Fermer toute connexion existante
-      if (webSocketRef.current) {
-        try {
-          webSocketRef.current.close();
-        } catch (error) {
-          console.error("Erreur lors de la fermeture de la connexion:", error);
-        }
-        webSocketRef.current = null;
-      }
-
-      setTimeout(() => {
-        try {
-          console.log(
-            `Tentative de connexion ${
-              reconnectAttempts + 1
-            } à la room ${newRoomId} en tant que ${newClientId}`
-          );
-
-          const ws = new WebSocket(
-            `ws://localhost:8000/ws/${newRoomId}?client_id=${newClientId}`
-          );
-
-          ws.onopen = () => {
-            console.log(`Connecté à la room ${newRoomId}`);
-            setIsConnected(true);
-            setRoomId(newRoomId);
-            setClientId(newClientId);
-            setReconnectAttempts(0); // Réinitialiser les tentatives
-
-            // Demander immédiatement la liste des joueurs et l'état de la room
-            ws.send(JSON.stringify({ type: "get_player_list" }));
-          };
-
-          ws.onmessage = (event) => {
-            try {
-              // Stocker le message brut
-              setLastMessage(event.data);
-
-              // Parser le message
-              const data = JSON.parse(event.data);
-              console.log("Message reçu:", data);
-
-              // Traiter différents types de messages
-              switch (data.type) {
-                case "room_state":
-                  if (data.state) {
-                    setRoomState(data.state);
-
-                    // Mettre à jour la liste des joueurs
-                    if (data.state.players) {
-                      const playersList = Object.entries(
-                        data.state.players
-                      ).map(([id, playerData]: [string, any]) => ({
-                        id,
-                        name: playerData.name,
-                        score: playerData.score,
-                      }));
-                      setPlayers(playersList);
-                    }
-
-                    // Mettre à jour la configuration
-                    if (data.state.config) {
-                      setRoomConfig({
-                        roomName: data.state.name,
-                        password: data.state.has_password ? "********" : "",
-                        playlist: data.state.config.playlist,
-                        clipDuration: data.state.config.clipDuration,
-                        clipMoment: data.state.config.clipMoment,
-                        buzzerOffDuration: data.state.config.buzzerOffDuration,
-                        cutMusicAfterBuzz: data.state.config.cutMusicAfterBuzz,
-                      });
-                    }
-                  }
-                  break;
-
-                case "player_list":
-                  if (data.players) {
-                    const playersList = Object.entries(data.players).map(
-                      ([id, playerData]: [string, any]) => ({
-                        id,
-                        name: playerData.name,
-                        score: playerData.score || 0,
-                      })
-                    );
-                    setPlayers(playersList);
-                  }
-                  break;
-
-                case "chat_history":
-                  if (data.messages) {
-                    setChatMessages(data.messages);
-                  }
-                  break;
-
-                case "chat_message":
-                  if (data.message) {
-                    setChatMessages((prev) => [...prev, data.message]);
-                  }
-                  break;
-
-                case "config_updated":
-                  if (data.config) {
-                    setRoomConfig((prev) => {
-                      if (!prev)
-                        return {
-                          ...defaultRoomConfig,
-                          ...data.config,
-                        };
-
-                      return {
-                        ...prev,
-                        playlist: data.config.playlist || prev.playlist,
-                        clipDuration:
-                          data.config.clipDuration || prev.clipDuration,
-                        clipMoment: data.config.clipMoment || prev.clipMoment,
-                        buzzerOffDuration:
-                          data.config.buzzerOffDuration ||
-                          prev.buzzerOffDuration,
-                        cutMusicAfterBuzz:
-                          data.config.cutMusicAfterBuzz !== undefined
-                            ? data.config.cutMusicAfterBuzz
-                            : prev.cutMusicAfterBuzz,
-                      };
-                    });
-                  }
-                  break;
-
-                default:
-                  console.log("Message de type inconnu:", data);
-              }
-            } catch (error) {
-              console.error("Erreur lors du traitement du message:", error);
-              console.log("Message brut:", event.data);
-            }
-          };
-
-          ws.onclose = (event) => {
-            console.log(
-              `Déconnecté de la room ${newRoomId}`,
-              event.code,
-              event.reason
-            );
-
-            // Tentative de reconnexion automatique avec un délai exponentiel
-            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-              const timeout = Math.pow(2, reconnectAttempts) * 1000;
-              setReconnectAttempts((prev) => prev + 1);
-
-              setTimeout(() => {
-                connectToRoom(newRoomId, newClientId);
-              }, timeout);
-            } else {
-              // Réinitialisation complète si max tentatives atteintes
-              setIsConnected(false);
-              setRoomId(null);
-              setClientId(null);
-              setPlayers([]);
-              setRoomState(null);
-              setRoomConfig(null);
-              setChatMessages([]);
-            }
-          };
-
-          ws.onerror = (error) => {
-            console.error("WebSocket error:", error);
-            setIsConnected(false);
-
-            // Incrémenter les tentatives de reconnexion en cas d'erreur
-            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-              setReconnectAttempts((prev) => prev + 1);
-            }
-          };
-
-          webSocketRef.current = ws;
-        } catch (error) {
-          console.error("Erreur lors de la création du WebSocket:", error);
-        }
-      }, 500); // Délai de 500ms avant de se reconnecter
-    },
-    [isConnected, roomId, clientId, reconnectAttempts]
-  );
-
-  // Déconnexion de la room
-  const disconnectFromRoom = useCallback(() => {
-    if (webSocketRef.current) {
       try {
-        webSocketRef.current.close();
+        // Create new WebSocket connection
+        const ws = new WebSocket(
+          `${serverUrl}/${roomId}?client_id=${clientId}`
+        );
+
+        // Set up event handlers
+        ws.onopen = () => {
+          console.log(`Connected to room ${roomId} as ${clientId}`);
+          setIsConnected(true);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data) as ServerMessage;
+            // Update last message
+            setLastMessage(data);
+
+            // Notify all listeners
+            listeners.current.forEach((listener) => {
+              try {
+                listener.callback(data);
+              } catch (error) {
+                console.error("Error in message listener:", error);
+              }
+            });
+          } catch (error) {
+            console.error("Error parsing message:", error);
+          }
+        };
+
+        ws.onclose = () => {
+          console.log(`Disconnected from room ${roomId}`);
+          setIsConnected(false);
+        };
+
+        ws.onerror = (error) => {
+          console.error("WebSocket error:", error);
+          setIsConnected(false);
+        };
+
+        // Store the WebSocket reference
+        wsRef.current = ws;
       } catch (error) {
-        console.error("Erreur lors de la fermeture de la connexion:", error);
+        console.error("Error connecting to WebSocket:", error);
       }
-      webSocketRef.current = null;
+    },
+    [serverUrl]
+  );
+
+  // Disconnect from the room
+  const disconnect = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
     }
-    setLastMessage(null);
-    setChatMessages([]);
     setIsConnected(false);
-    setRoomId(null);
-    setClientId(null);
-    setPlayers([]);
-    setRoomState(null);
-    setRoomConfig(null);
-    setReconnectAttempts(0);
+    setLastMessage(null);
   }, []);
 
-  // Envoyer un message
+  // Send a message to the server
   const sendMessage = useCallback(
-    (message: string) => {
-      if (webSocketRef.current && isConnected) {
-        try {
-          const fullMessage = JSON.stringify({
-            type: "chat_message",
-            content: message,
-          });
-          webSocketRef.current.send(fullMessage);
-        } catch (error) {
-          console.warn("Impossible d'envoyer le message:", error);
-        }
-      } else {
-        console.warn("Impossible d'envoyer le message: WebSocket non connecté");
+    (messageObj: ClientMessage | string): boolean => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        console.warn("Cannot send message: WebSocket not connected");
+        return false;
+      }
+
+      try {
+        const message =
+          typeof messageObj === "string"
+            ? messageObj
+            : JSON.stringify(messageObj);
+
+        wsRef.current.send(message);
+        return true;
+      } catch (error) {
+        console.error("Error sending message:", error);
+        return false;
       }
     },
-    [isConnected]
+    []
   );
 
-  // Démarrer le jeu
-  const startGame = useCallback(() => {
-    if (webSocketRef.current && isConnected) {
-      webSocketRef.current.send(JSON.stringify({ type: "start_game" }));
-    }
-  }, [isConnected]);
+  // Add a message listener
+  const addMessageListener = useCallback(
+    (callback: (data: ServerMessage) => void): number => {
+      const id = nextListenerId.current++;
+      listeners.current.push({ id, callback });
+      return id;
+    },
+    []
+  );
 
-  // Envoyer un buzz
-  const sendBuzz = useCallback(() => {
-    if (webSocketRef.current && isConnected) {
-      webSocketRef.current.send(JSON.stringify({ type: "buzz" }));
-    }
-  }, [isConnected]);
+  // Remove a message listener
+  const removeMessageListener = useCallback((id: number): void => {
+    listeners.current = listeners.current.filter(
+      (listener) => listener.id !== id
+    );
+  }, []);
 
-  // Ping pour maintenir la connexion active
+  // Clean up on unmount
   useEffect(() => {
-    let pingInterval: NodeJS.Timeout | null = null;
-
-    if (isConnected) {
-      pingInterval = setInterval(() => {
-        try {
-          if (
-            webSocketRef.current &&
-            webSocketRef.current.readyState === WebSocket.OPEN
-          ) {
-            // Envoyer un ping silencieux pour maintenir la connexion
-            webSocketRef.current.send(JSON.stringify({ type: "ping" }));
-          }
-        } catch (error) {
-          console.error("Erreur lors de l'envoi du ping:", error);
-        }
-      }, 30000); // Ping toutes les 30 secondes
-    }
-
     return () => {
-      if (pingInterval) clearInterval(pingInterval);
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
     };
-  }, [isConnected]);
+  }, []);
 
   return (
     <WebSocketContext.Provider
       value={{
-        connectToRoom,
-        disconnectFromRoom,
+        connect,
+        disconnect,
+        isConnected,
         sendMessage,
         lastMessage,
-        chatMessages,
-        isConnected,
-        roomId,
-        players,
-        roomState,
-        roomConfig,
-        updateRoomConfig,
-        startGame,
-        sendBuzz,
-        reconnectAttempts,
+        addMessageListener,
+        removeMessageListener,
       }}
     >
       {children}
@@ -430,10 +202,11 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
   );
 }
 
-export const useWebSocket = () => {
+// Custom hook to use the WebSocket context
+export function useWebSocket() {
   const context = useContext(WebSocketContext);
   if (!context) {
     throw new Error("useWebSocket must be used within a WebSocketProvider");
   }
   return context;
-};
+}
