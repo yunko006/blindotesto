@@ -1,13 +1,65 @@
 import React, { useState, FormEvent, useRef, useEffect } from "react";
 import { useWebSocket } from "@/utils/providers/webScoketProvider";
 
-const ChatComponent = () => {
+// Props du composant Chat
+interface ChatComponentProps {
+  roomId: string;
+}
+
+// Définir les types pour les messages chat
+interface ChatMessage {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  content: string;
+  room_id: string;
+  sender_role: string;
+  is_system: boolean;
+  timestamp: string;
+  is_self?: boolean;
+}
+
+const ChatComponent = ({ roomId }: ChatComponentProps) => {
   const [inputMessage, setInputMessage] = useState("");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
   // Utiliser les nouvelles propriétés du provider
-  const { sendMessage, chatMessages, isConnected, roomId } = useWebSocket();
+  const {
+    sendMessage,
+    isConnected,
+    addMessageListener,
+    removeMessageListener,
+  } = useWebSocket();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // S'abonner aux messages de chat
+  useEffect(() => {
+    // Gestionnaire de messages
+    const handleChatMessages = (data: any) => {
+      if (data.type === "chat_history" && Array.isArray(data.messages)) {
+        setChatMessages(data.messages);
+      } else if (data.type === "chat_message" && data.message) {
+        setChatMessages((prev) => [...prev, data.message]);
+      } else if (data.type === "system_message" && data.message) {
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            ...data.message,
+            is_system: true,
+          },
+        ]);
+      }
+    };
+
+    // Ajouter le listener et stocker son ID
+    const listenerId = addMessageListener(handleChatMessages);
+
+    // Nettoyer à la désinscription
+    return () => {
+      removeMessageListener(listenerId);
+    };
+  }, [addMessageListener, removeMessageListener]);
 
   // Scroll to bottom whenever messages change
   useEffect(() => {
@@ -22,12 +74,10 @@ const ChatComponent = () => {
     e.preventDefault();
     if (inputMessage.trim()) {
       // Envoyer un message formaté au format JSON avec le type chat_message
-      sendMessage(
-        JSON.stringify({
-          type: "chat_message",
-          content: inputMessage.trim(),
-        })
-      );
+      sendMessage({
+        type: "chat_message",
+        content: inputMessage.trim(),
+      });
       setInputMessage("");
     }
   };

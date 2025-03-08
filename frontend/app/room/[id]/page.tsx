@@ -1,10 +1,34 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useWebSocket } from "@/utils/providers/webScoketProvider";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import PlayersComponent from "@/components/players/listePlayers";
 import RoomConfigComponent from "@/components/rooms/roomConfig";
 import ChatComponent from "@/components/rooms/chat";
+
+interface Player {
+  id: string;
+  name: string;
+  score: number;
+}
+
+interface RoomState {
+  id: string;
+  name: string;
+  has_password: boolean;
+  game_state: "waiting" | "playing" | "paused" | "ended";
+  buzzer_state: "inactive" | "active" | "buzzed";
+  current_buzzer: string | null;
+  players: Record<string, { name: string; score: number }>;
+  config: {
+    playlist: string;
+    clipDuration: string;
+    clipMoment: string;
+    buzzerOffDuration: string;
+    cutMusicAfterBuzz: boolean;
+  };
+  current_song: any;
+}
 
 interface RoomConfig {
   roomName: string;
@@ -17,15 +41,19 @@ interface RoomConfig {
 }
 
 export default function RoomPage() {
+  // États locaux pour stocker les données reçues via WebSocket
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [roomState, setRoomState] = useState<RoomState | null>(null);
+  const [roomConfig, setRoomConfig] = useState<RoomConfig | null>(null);
+
+  // Utiliser le nouveau provider WebSocket
   const {
-    connectToRoom,
-    disconnectFromRoom,
-    players, // Nouveau nom pour les joueurs connectés
-    roomState, // Nouvel état pour toutes les données de la room
-    roomConfig, // Configuration de la room
-    updateRoomConfig, // Méthode pour mettre à jour la config
-    startGame, // Nouvelle méthode pour démarrer le jeu
-    isConnected, // État de connexion
+    connect,
+    disconnect,
+    isConnected,
+    sendMessage,
+    addMessageListener,
+    removeMessageListener,
   } = useWebSocket();
 
   const router = useRouter();
@@ -45,6 +73,55 @@ export default function RoomPage() {
     cutMusicAfterBuzz: true,
   };
 
+  // Gestionnaire de messages pour les mises à jour d'état de la room
+  const handleRoomStateMessages = useCallback(
+    (data) => {
+      if (data.type === "room_state" && data.state) {
+        setRoomState(data.state);
+
+        // Extraire les joueurs de l'état de la room
+        if (data.state.players) {
+          const playersList = Object.entries(data.state.players).map(
+            ([id, playerData]: [string, any]) => ({
+              id,
+              name: playerData.name,
+              score: playerData.score || 0,
+            })
+          );
+          setPlayers(playersList);
+        }
+
+        // Extraire la configuration
+        if (data.state.config) {
+          setRoomConfig({
+            roomName: data.state.name,
+            password: data.state.has_password ? "********" : "",
+            playlist: data.state.config.playlist,
+            clipDuration: data.state.config.clipDuration,
+            clipMoment: data.state.config.clipMoment,
+            buzzerOffDuration: data.state.config.buzzerOffDuration,
+            cutMusicAfterBuzz: data.state.config.cutMusicAfterBuzz,
+          });
+        }
+      } else if (data.type === "player_list" && data.players) {
+        const playersList = Object.entries(data.players).map(
+          ([id, playerData]: [string, any]) => ({
+            id,
+            name: playerData.name,
+            score: playerData.score || 0,
+          })
+        );
+        setPlayers(playersList);
+      } else if (data.type === "config_update" && data.config) {
+        setRoomConfig((prevConfig) => {
+          if (!prevConfig) return { ...defaultConfig, ...data.config };
+          return { ...prevConfig, ...data.config };
+        });
+      }
+    },
+    [defaultConfig]
+  );
+
   // Rediriger vers la page de création si les paramètres sont manquants
   useEffect(() => {
     if (!roomParam || !clientParam) {
@@ -55,27 +132,64 @@ export default function RoomPage() {
   // Se connecter à la room avec l'identifiant client
   useEffect(() => {
     if (roomParam && clientParam) {
-      console.log(
-        `Connexion à la room ${roomParam} en tant que ${clientParam}`
-      );
-      connectToRoom(roomParam, clientParam);
+      // Ajouter un délai pour laisser le temps au serveur de préparer la room
+      const timeoutId = setTimeout(() => {
+        console.log(
+          `Connexion à la room ${roomParam} en tant que ${clientParam}`
+        );
+        connect(roomParam, clientParam);
+      }, 500); // 500ms de délai avant la connexion
 
       // Nettoyer proprement à la déconnexion
       return () => {
+        clearTimeout(timeoutId);
         console.log(`Nettoyage: Déconnexion de la room ${roomParam}`);
-        disconnectFromRoom();
+        disconnect();
       };
     }
-  }, [roomParam, clientParam, connectToRoom, disconnectFromRoom]);
+  }, [roomParam, clientParam, connect, disconnect]);
+
+  // Ajouter un écouteur pour les messages d'état de la room
+  useEffect(() => {
+    const listenerId = addMessageListener(handleRoomStateMessages);
+
+    // Si connecté, demander l'état initial de la room
+    if (isConnected) {
+      sendMessage({ type: "get_player_list" });
+    }
+
+    return () => {
+      removeMessageListener(listenerId);
+    };
+  }, [
+    isConnected,
+    addMessageListener,
+    removeMessageListener,
+    handleRoomStateMessages,
+    sendMessage,
+  ]);
 
   // Gestionnaire pour mettre à jour la configuration
   const handleConfigChange = (newConfig: RoomConfig) => {
-    updateRoomConfig(newConfig);
+    // Envoyer la mise à jour au serveur
+    sendMessage({
+      type: "config_update",
+      config: {
+        playlist: newConfig.playlist,
+        clipDuration: newConfig.clipDuration,
+        clipMoment: newConfig.clipMoment,
+        buzzerOffDuration: newConfig.buzzerOffDuration,
+        cutMusicAfterBuzz: newConfig.cutMusicAfterBuzz,
+      },
+    });
+
+    // Mettre à jour l'état local
+    setRoomConfig(newConfig);
   };
 
   // Gestionnaire pour démarrer la partie
   const handleStartGame = () => {
-    startGame();
+    sendMessage({ type: "start_game" });
   };
 
   // Si les paramètres sont manquants, afficher un message de chargement
@@ -151,7 +265,7 @@ export default function RoomPage() {
           <div className="w-full md:w-1/3 px-2 mb-4">
             <div className="border-2 border-black rounded-lg h-full p-4">
               <h2 className="text-xl font-bold mb-3">Chat</h2>
-              <ChatComponent />
+              <ChatComponent roomId={roomParam} />
             </div>
           </div>
         </div>
